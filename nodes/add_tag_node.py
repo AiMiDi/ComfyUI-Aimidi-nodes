@@ -21,10 +21,8 @@ class AddTagNode:
         tag_text = [tag.strip() for tag in tag_text]
         add_tag = [tag.strip() for tag in add_tag]
         for tag in add_tag:
-            try:
+            if(tag in tag_text):
                 tag_text.remove(tag)
-            except:
-                pass
             tag_text.insert(0, tag)
         tag_text = ", ".join(tag_text)
         return (tag_text,)

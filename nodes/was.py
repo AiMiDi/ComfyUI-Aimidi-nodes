@@ -457,8 +457,8 @@ class LoadImagesPairBatchNode:
             }
         }
 
-    RETURN_TYPES = ("IMAGE", TEXT_TYPE, TEXT_TYPE)
-    RETURN_NAMES = ("image", "text", "filename_text")
+    RETURN_TYPES = ("IMAGE", TEXT_TYPE, TEXT_TYPE, TEXT_TYPE)
+    RETURN_NAMES = ("image", "text", "image_filename", "image_filepath")
     FUNCTION = "load_batch_images"
 
     CATEGORY = "Aimidi Nodes"
@@ -518,10 +518,12 @@ class LoadImagesPairBatchNode:
 
         text = self.load_txt_file(f'{path}/{os.path.splitext(filename)[0]}.txt')
 
+        filepath = os.path.join(path, filename)
+
         if filename_text_extension == "false":
             filename = os.path.splitext(filename)[0]
 
-        return (pil2tensor(image), text, filename)
+        return (pil2tensor(image), text, filename, filepath)
 
     class BatchImageLoader:
         def __init__(self, directory_path, label, pattern):
@@ -593,7 +595,6 @@ class SaveImagesPairNode:
     def INPUT_TYPES(cls):
         return {
             "required": {
-                "images": ("IMAGE", ),
                 "text": ("STRING", {"forceInput": True}),
                 "output_path": ("STRING", {"default": '[time(%Y-%m-%d)]', "multiline": False}),
                 "filename_prefix": ("STRING", {"default": "ComfyUI"}),
@@ -603,7 +604,12 @@ class SaveImagesPairNode:
                 "quality": ("INT", {"default": 100, "min": 1, "max": 100, "step": 1}),
                 "lossless_webp": (["false", "true"],),
                 "show_previews": (["true", "false"],),
+                "try_copy_to_output": (["true", "false"],),
             },
+            "optional": {
+                "image": ("IMAGE", ),
+                "image_path": ("STRING", {"forceInput": True}),
+            }
         }
 
     RETURN_TYPES = ()
@@ -678,7 +684,7 @@ class SaveImagesPairNode:
         except OSError:
             cstr(f"Unable to save file `{file}`").error.print()  
 
-    def was_save_images(self, images, filename, extension, quality, lossless_webp, show_previews):
+    def was_save_images(self, images, filename, extension, quality, lossless_webp, show_previews, try_copy_to_output, image_path=''):
         
         lossless_webp = (lossless_webp == "true")
 
@@ -688,67 +694,105 @@ class SaveImagesPairNode:
             cstr(f"The extension `{extension}` is not valid. The valid formats are: {', '.join(sorted(ALLOWED_EXT))}").error.print()
             file_extension = "png"
 
+        # Delegate the filename stuffs
+        file = f"{filename}{file_extension}"
+        output_file = os.path.abspath(os.path.join(self.output_path, file))
+
         results = list()
-        for image in images:
-            i = 255. * image.cpu().numpy()
-            img = Image.fromarray(np.clip(i, 0, 255).astype(np.uint8))
+        if images is not None:
+            for image in images:
+                i = 255. * image.cpu().numpy()
+                img = Image.fromarray(np.clip(i, 0, 255).astype(np.uint8))
 
-            # Delegate metadata/pnginfo
-            if extension == 'webp':
-                img_exif = img.getexif()
-                exif_data = img_exif.tobytes()
-            else:
-                metadata = PngInfo()
-                exif_data = metadata
-
-            # Delegate the filename stuffs
-            file = f"{filename}{file_extension}"
-
-            # Save the images
-            try:
-                output_file = os.path.abspath(os.path.join(self.output_path, file))
-                if extension in ["jpg", "jpeg"]:
-                    img.save(output_file,
-                             quality=quality, optimize=True)
-                elif extension == 'webp':
-                    img.save(output_file,
-                             quality=quality, lossless=lossless_webp, exif=exif_data)
-                elif extension == 'png':
-                    img.save(output_file,
-                             pnginfo=exif_data, optimize=True)
-                elif extension == 'bmp':
-                    img.save(output_file)
-                elif extension == 'tiff':
-                    img.save(output_file,
-                             quality=quality, optimize=True)
+                # Delegate metadata/pnginfo
+                if extension == 'webp':
+                    img_exif = img.getexif()
+                    exif_data = img_exif.tobytes()
                 else:
-                    img.save(output_file,
-                             pnginfo=exif_data, optimize=True)
+                    metadata = PngInfo()
+                    exif_data = metadata
 
-                cstr(f"Image file saved to: {output_file}").msg.print()
+                if not try_copy_to_output or image_path == '':
+                    # Save the images
+                    try:
+                        if extension in ["jpg", "jpeg"]:
+                            img.save(output_file,
+                                    quality=quality, optimize=True)
+                        elif extension == 'webp':
+                            img.save(output_file,
+                                    quality=quality, lossless=lossless_webp, exif=exif_data)
+                        elif extension == 'png':
+                            img.save(output_file,
+                                    pnginfo=exif_data, optimize=True)
+                        elif extension == 'bmp':
+                            img.save(output_file)
+                        elif extension == 'tiff':
+                            img.save(output_file,
+                                    quality=quality, optimize=True)
+                        else:
+                            img.save(output_file,
+                                    pnginfo=exif_data, optimize=True)
 
-                if show_previews == 'true':
-                    subfolder = self.get_subfolder_path(output_file, self.output_dir)
-                    results.append({
-                        "filename": file,
-                        "subfolder": subfolder,
-                        "type": self.type
-                    })
+                        cstr(f"Image file saved to: {output_file}").msg.print()
 
-                # Update the output image history
-                update_history_output_images(output_file)
+                        if show_previews == 'true':
+                            subfolder = self.get_subfolder_path(output_file, self.output_dir)
+                            results.append({
+                                "filename": file,
+                                "subfolder": subfolder,
+                                "type": self.type
+                            })
 
-            except OSError as e:
-                cstr(f'Unable to save file to: {output_file}').error.print()
-                print(e)
-            except Exception as e:
-                cstr('Unable to save file due to the to the following error:').error.print()
-                print(e)
+                        # Update the output image history
+                        update_history_output_images(output_file)
+
+                    except OSError as e:
+                        cstr(f'Unable to save file to: {output_file}').error.print()
+                        print(e)
+                    except Exception as e:
+                        cstr('Unable to save file due to the to the following error:').error.print()
+                        print(e)
+                else:
+                    # Copy the image
+                    self.copy_images(show_previews, image_path, output_file, filename, results)
+        elif image_path != '':
+            # Copy the image
+                self.copy_images(show_previews, image_path, output_file, filename, results)
 
         if show_previews == 'true':
             return results
         else:
             return []
+
+    def copy_images(self, show_previews, src_image_path, output_file, filename, results):
+        try:
+            import shutil
+            # 获取原文件的扩展名
+            src_extension = os.path.splitext(src_image_path)[1]
+            # 设置目标文件的扩展名
+            output_file = os.path.splitext(output_file)[0] + src_extension
+
+            shutil.copy2(src_image_path, output_file)
+
+            cstr(f"Image file copied to: {output_file}").msg.print()
+
+            if show_previews == 'true':
+                subfolder = self.get_subfolder_path(output_file, self.output_dir)
+                results.append({
+                                "filename": filename + src_extension,
+                                "subfolder": subfolder,
+                                "type": self.type
+                            })
+
+                        # Update the output image history
+            update_history_output_images(output_file)
+
+        except OSError as e:
+            cstr(f'Unable to copy file to: {output_file}').error.print()
+            print(e)
+        except Exception as e:
+            cstr('Unable to copy file due to the to the following error:').error.print()
+            print(e)
 
     def get_subfolder_path(self, image_path, output_path):
         output_parts = output_path.strip(os.sep).split(os.sep)
@@ -758,8 +802,9 @@ class SaveImagesPairNode:
         subfolder_path = os.sep.join(subfolder_parts[:-1])
         return subfolder_path
 
-    def save_image_pair(self, images, text, output_path='', filename_prefix="ComfyUI", filename_delimiter='_',
-                        extension='png', quality=100, lossless_webp="false", filename_number_padding=4, show_previews="true"):
+    def save_image_pair(self, text, output_path='', filename_prefix="ComfyUI", filename_delimiter='_',
+                        extension='png', quality=100, lossless_webp="false", filename_number_padding=4, show_previews="true", 
+                        try_copy_to_output='true', image_path='', image = None):
         filename = self.save_text_file(text, output_path, filename_prefix, filename_delimiter, filename_number_padding)
-        images = self.was_save_images(images, filename, extension, quality, lossless_webp, show_previews)
-        return {"ui": {"images": images}}
+        previews = self.was_save_images(image, filename, extension, quality, lossless_webp, show_previews, try_copy_to_output, image_path)
+        return {"ui": {"images": previews}}
