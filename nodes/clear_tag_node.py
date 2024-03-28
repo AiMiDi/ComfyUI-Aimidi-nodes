@@ -4,7 +4,9 @@ class ClearTagNode:
 
     @classmethod
     def INPUT_TYPES(s):
-        return {"required": {       
+        return {"required": {
+                    },
+                "optional": {       
                     "tag_text": ("STRING", {"forceInput": True}),
                     }
                 }
