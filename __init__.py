@@ -2,12 +2,14 @@ from .nodes.merge_tag_node import MergeTagNode
 from .nodes.clear_tag_node import ClearTagNode
 from .nodes.add_tag_node import AddTagNode
 from .nodes.move_tag_to_top_node import MoveTagToTopNode
+from .nodes.reserve_tag_node import ReserveTagNode
 from .nodes.was import LoadImagesPairBatchNode, SaveImagesPairNode
 NODE_CLASS_MAPPINGS = {
     "Merge Tag": MergeTagNode,
     "Clear Tag": ClearTagNode,
     "Add Tag": AddTagNode,
     "Move Tag To Top": MoveTagToTopNode,
+    "Reserve Tag": ReserveTagNode,
     "Load Images Pair Batch": LoadImagesPairBatchNode,
     "Save Images Pair": SaveImagesPairNode
     }
